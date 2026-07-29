@@ -1,0 +1,5 @@
+{
+  "name": "AI Resume Builder",
+  "description": "A modern, AI-powered web application designed to help users build, manage, and optimize their resumes for the job market. This platform provides a user-friendly interface for creating professional resumes, leveraging AI to enhance content and tailor it to specific job descriptions.",
+  "requestFramePermissions": []
+}
