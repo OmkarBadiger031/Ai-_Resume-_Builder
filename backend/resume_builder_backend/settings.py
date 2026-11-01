@@ -79,7 +79,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "resume_builder_backend.wsgi.application"
 ASGI_APPLICATION = "resume_builder_backend.asgi.application"
 
-```python
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
@@ -94,7 +93,7 @@ DATABASES = {
         },
     }
 }
-```
+
 
 
 AUTH_PASSWORD_VALIDATORS = [
