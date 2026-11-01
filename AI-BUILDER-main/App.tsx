@@ -186,6 +186,15 @@ const engineeringManagerData: ResumeData = {
     skills: [ { id: '1', name: 'Team Leadership' }, { id: '2', name: 'Agile Project Management' }, { id: '3', name: 'System Architecture' }, { id: '4', name: 'Recruiting & Hiring' }, { id: '5', name: 'Technical Strategy' }, { id: '6', name: 'Budget Management' } ],
 };
 
+const getSavedResume = (email: string): ResumeData => {
+  try {
+    const savedResume = localStorage.getItem(`resume:${email.toLowerCase()}`);
+    return savedResume ? { ...softwareEngineerData, ...JSON.parse(savedResume) } : softwareEngineerData;
+  } catch {
+    return softwareEngineerData;
+  }
+};
+
 export const templateDataMap: Partial<Record<TemplateKey, ResumeData>> = {
     // Finance
     'finance': financialAnalystData,
@@ -227,7 +236,13 @@ const App: React.FC = () => {
     // Check for a logged-in user in session storage on initial load
     const storedUser = sessionStorage.getItem('currentUser');
     if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
+      try {
+        const user = JSON.parse(storedUser) as User;
+        setCurrentUser(user);
+        setResumeData(getSavedResume(user.email));
+      } catch {
+        sessionStorage.removeItem('currentUser');
+      }
     }
     
     // Check for saved theme preference
@@ -237,6 +252,15 @@ const App: React.FC = () => {
     setTheme(initialTheme);
 
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      localStorage.setItem(`resume:${currentUser.email.toLowerCase()}`, JSON.stringify(resumeData));
+    } catch (error) {
+      console.error('Unable to save resume in this browser:', error);
+    }
+  }, [currentUser, resumeData]);
 
   useEffect(() => {
       const root = window.document.documentElement;
@@ -250,6 +274,7 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (user: User) => {
+    setResumeData(getSavedResume(user.email));
     setCurrentUser(user);
     sessionStorage.setItem('currentUser', JSON.stringify(user));
   };
@@ -257,6 +282,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setCurrentUser(null);
     sessionStorage.removeItem('currentUser');
+    setResumeData(softwareEngineerData);
   };
 
   return (

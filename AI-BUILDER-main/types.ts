@@ -54,6 +54,21 @@ export interface Award {
   date: string;
 }
 
+export interface ResumeDetailEntry {
+  id: string;
+  title: string;
+  organization: string;
+  date: string;
+  description: string;
+  url: string;
+}
+
+export interface AdditionalResumeSection {
+  id: string;
+  title: string;
+  entries: ResumeDetailEntry[];
+}
+
 export interface ResumeData {
   personalInfo: PersonalInfo;
   summary: string;
@@ -62,8 +77,9 @@ export interface ResumeData {
   skills: Skill[];
   projects: Project[];
   awards: Award[];
+  additionalSections?: AdditionalResumeSection[];
 }
 
-export type SectionKey = keyof ResumeData;
+export type SectionKey = 'personalInfo' | 'summary' | 'workExperience' | 'education' | 'skills' | 'projects' | 'awards';
 
-export type TemplateKey = 'classic' | 'executive' | 'corporate' | 'consulting' | 'finance' | 'registeredNurse' | 'surgeon' | 'psychiatrist' | 'techModern' | 'techMinimal' | 'techPro' | 'startup' | 'techSupporter' | 'techArch' | 'techManager' | 'portfolioManager' | 'projectManager' | 'medicalDoctor' | 'dataScientist' | 'uxDesigner';
+export type TemplateKey = 'classic' | 'executive' | 'corporate' | 'consulting' | 'finance' | 'registeredNurse' | 'surgeon' | 'psychiatrist' | 'techModern' | 'techMinimal' | 'techPro' | 'startup' | 'techSupporter' | 'techArch' | 'techManager' | 'portfolioManager' | 'projectManager' | 'medicalDoctor' | 'dataScientist' | 'uxDesigner' | 'teacher' | 'academicResearcher' | 'graduate' | 'marketing' | 'sales' | 'humanResources' | 'engineer' | 'accountant';

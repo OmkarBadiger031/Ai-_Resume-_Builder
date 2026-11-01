@@ -3,7 +3,7 @@
 
 
 import React, { useState } from 'react';
-import { ResumeData, WorkExperience, Skill, Project, Education, SectionKey, Award } from '../types';
+import { ResumeData, WorkExperience, Skill, Project, Education, SectionKey, Award, AdditionalResumeSection, ResumeDetailEntry } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Input } from './ui/Input';
 import { Textarea } from './ui/Textarea';
@@ -42,6 +42,8 @@ const AccordionSection: React.FC<{
 
 export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeData, sections, onMoveSection }) => {
     const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
+    const [photoError, setPhotoError] = useState('');
+    const [aiErrors, setAiErrors] = useState<Record<string, string>>({});
 
     const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -50,17 +52,46 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
 
     const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (loadEvent) => {
-                const base64 = loadEvent.target?.result as string;
+        e.currentTarget.value = '';
+        setPhotoError('');
+        if (!file) return;
+
+        const supportedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!supportedTypes.includes(file.type)) {
+            setPhotoError('Choose a JPG, PNG, or WebP image.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            setPhotoError('Choose an image smaller than 10 MB.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onerror = () => setPhotoError('The selected photo could not be read. Please try another image.');
+        reader.onload = (loadEvent) => {
+            const image = new Image();
+            image.onerror = () => setPhotoError('The selected file is not a valid image.');
+            image.onload = () => {
+                const maxDimension = 512;
+                const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                const context = canvas.getContext('2d');
+                if (!context) {
+                    setPhotoError('Your browser could not process this photo. Please try another image.');
+                    return;
+                }
+
+                context.drawImage(image, 0, 0, canvas.width, canvas.height);
                 setResumeData(prev => ({
                     ...prev,
-                    personalInfo: { ...prev.personalInfo, photo: base64 }
+                    personalInfo: { ...prev.personalInfo, photo: canvas.toDataURL('image/jpeg', 0.82) }
                 }));
             };
-            reader.readAsDataURL(file);
-        }
+            image.src = loadEvent.target?.result as string;
+        };
+        reader.readAsDataURL(file);
     };
 
     const removePhoto = () => {
@@ -102,8 +133,13 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
     
     const handleGenerateBullets = async (exp: WorkExperience) => {
         setAiLoading(prev => ({ ...prev, [exp.id]: true }));
+        setAiErrors(prev => ({ ...prev, [exp.id]: '' }));
         try {
             const bullets = await generateWorkExperienceBullets(exp.jobTitle, exp.company, exp.description);
+            if (bullets.length === 0) {
+                setAiErrors(prev => ({ ...prev, [exp.id]: 'AI could not generate suggestions. Check the API key and connection, then try again.' }));
+                return;
+            }
             const formattedBullets = bullets.map(b => `- ${b}`).join('\n');
             const newDescription = exp.description ? `${exp.description}\n${formattedBullets}` : formattedBullets;
             setResumeData(prev => ({
@@ -112,6 +148,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
             }));
         } catch (error) {
             console.error("Failed to generate bullet points", error);
+            setAiErrors(prev => ({ ...prev, [exp.id]: error instanceof Error ? error.message : 'AI suggestions failed. Please try again.' }));
         } finally {
             setAiLoading(prev => ({ ...prev, [exp.id]: false }));
         }
@@ -181,6 +218,54 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
         setResumeData(prev => ({ ...prev, awards: prev.awards.filter(award => award.id !== id) }));
     };
 
+    const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const addAdditionalSection = (title: string) => {
+        const newSection: AdditionalResumeSection = {
+            id: makeId(),
+            title,
+            entries: [{ id: makeId(), title: '', organization: '', date: '', description: '', url: '' }],
+        };
+        setResumeData(prev => ({ ...prev, additionalSections: [...(prev.additionalSections || []), newSection] }));
+    };
+    const updateAdditionalSectionTitle = (id: string, title: string) => {
+        setResumeData(prev => ({ ...prev, additionalSections: (prev.additionalSections || []).map(section => section.id === id ? { ...section, title } : section) }));
+    };
+    const removeAdditionalSection = (id: string) => {
+        setResumeData(prev => ({ ...prev, additionalSections: (prev.additionalSections || []).filter(section => section.id !== id) }));
+    };
+    const addAdditionalEntry = (sectionId: string) => {
+        const entry: ResumeDetailEntry = { id: makeId(), title: '', organization: '', date: '', description: '', url: '' };
+        setResumeData(prev => ({
+            ...prev,
+            additionalSections: (prev.additionalSections || []).map(section => section.id === sectionId ? { ...section, entries: [...section.entries, entry] } : section),
+        }));
+    };
+    const updateAdditionalEntry = (sectionId: string, entryId: string, field: keyof ResumeDetailEntry, value: string) => {
+        setResumeData(prev => ({
+            ...prev,
+            additionalSections: (prev.additionalSections || []).map(section => section.id === sectionId
+                ? { ...section, entries: section.entries.map(entry => entry.id === entryId ? { ...entry, [field]: value } : entry) }
+                : section),
+        }));
+    };
+    const removeAdditionalEntry = (sectionId: string, entryId: string) => {
+        setResumeData(prev => ({
+            ...prev,
+            additionalSections: (prev.additionalSections || []).map(section => section.id === sectionId
+                ? { ...section, entries: section.entries.filter(entry => entry.id !== entryId) }
+                : section),
+        }));
+    };
+    const moveAdditionalSection = (index: number, direction: 'up' | 'down') => {
+        setResumeData(prev => {
+            const updated = [...(prev.additionalSections || [])];
+            const target = direction === 'up' ? index - 1 : index + 1;
+            if (target < 0 || target >= updated.length) return prev;
+            [updated[index], updated[target]] = [updated[target], updated[index]];
+            return { ...prev, additionalSections: updated };
+        });
+    };
+
     const sectionComponents: Record<SectionKey, { title: string; component: React.ReactNode; defaultOpen?: boolean }> = {
         personalInfo: {
             title: "Personal Information",
@@ -203,6 +288,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
                             </Button>
                         )}
                     </div>
+                    {photoError && <p className="text-sm text-destructive" role="alert">{photoError}</p>}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
                     <Input name="fullName" placeholder="Full Name" value={resumeData.personalInfo.fullName} onChange={handlePersonalInfoChange} />
@@ -245,6 +331,7 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
                                   <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
                            </div>
+                                    {aiErrors[exp.id] && <p className="text-sm text-destructive" role="alert">{aiErrors[exp.id]}</p>}
                         </CardContent>
                     </Card>
                 ))}
@@ -381,6 +468,48 @@ export const ResumeForm: React.FC<ResumeFormProps> = ({ resumeData, setResumeDat
                     </AccordionSection>
                 )
             })}
+            <section className="space-y-4 rounded-lg border border-dashed p-4">
+                <div>
+                    <h2 className="text-lg font-semibold">Add profession-specific sections</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Add only what fits your background. Empty sections are hidden in the resume preview.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {['Internship Experience', 'Certifications', 'Languages', 'Publications & Research', 'Teaching Experience', 'Volunteer Experience', 'Achievements', 'Interests', 'Custom Section'].map(title => (
+                        <Button key={title} type="button" size="sm" variant="outline" onClick={() => addAdditionalSection(title)}>
+                            <PlusCircle className="mr-1.5 h-4 w-4" />{title}
+                        </Button>
+                    ))}
+                </div>
+                {(resumeData.additionalSections || []).map((section, index) => <AccordionSection
+                    key={section.id}
+                    title={section.title || 'Untitled section'}
+                    defaultOpen
+                    moveControls={<div className="flex flex-col">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveAdditionalSection(index, 'up')} disabled={index === 0} aria-label={`Move ${section.title || 'section'} up`}><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveAdditionalSection(index, 'down')} disabled={index === (resumeData.additionalSections || []).length - 1} aria-label={`Move ${section.title || 'section'} down`}><ArrowDown className="h-4 w-4" /></Button>
+                    </div>}
+                >
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <Input aria-label="Section heading" value={section.title} onChange={event => updateAdditionalSectionTitle(section.id, event.target.value)} placeholder="Section heading" />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeAdditionalSection(section.id)} aria-label={`Remove ${section.title || 'section'}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                        {section.entries.map(entry => <Card key={entry.id} className="bg-muted/40">
+                            <CardContent className="space-y-3 p-4">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                    <Input aria-label="Entry title" value={entry.title} onChange={event => updateAdditionalEntry(section.id, entry.id, 'title', event.target.value)} placeholder="Title, language, publication, or achievement" />
+                                    <Input aria-label="Organization or proficiency" value={entry.organization} onChange={event => updateAdditionalEntry(section.id, entry.id, 'organization', event.target.value)} placeholder="Organization or proficiency" />
+                                    <Input aria-label="Date" value={entry.date} onChange={event => updateAdditionalEntry(section.id, entry.id, 'date', event.target.value)} placeholder="Date or date range" />
+                                    <Input aria-label="Related link" value={entry.url} onChange={event => updateAdditionalEntry(section.id, entry.id, 'url', event.target.value)} placeholder="Optional link" />
+                                </div>
+                                <Textarea aria-label="Entry details" value={entry.description} onChange={event => updateAdditionalEntry(section.id, entry.id, 'description', event.target.value)} placeholder="Optional details" rows={3} />
+                                <div className="flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={() => removeAdditionalEntry(section.id, entry.id)}><Trash2 className="mr-1.5 h-4 w-4 text-destructive" />Remove entry</Button></div>
+                            </CardContent>
+                        </Card>)}
+                        <Button type="button" variant="secondary" size="sm" onClick={() => addAdditionalEntry(section.id)}><PlusCircle className="mr-2 h-4 w-4" />Add item</Button>
+                    </div>
+                </AccordionSection>)}
+            </section>
         </div>
     );
 };

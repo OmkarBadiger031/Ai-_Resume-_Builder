@@ -10,10 +10,8 @@ import { Sparkles, Check, FileTextIcon } from './icons';
 import { analyzeUploadedResume, generateResumeFromPrompt } from '../services/geminiService';
 import { Input } from './ui/Input';
 import { Textarea } from './ui/Textarea';
-
-
-declare var jspdf: any;
-declare var html2canvas: any;
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 type Step = 'template' | 'ai' | 'content' | 'preview' | 'ats';
 
@@ -46,6 +44,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
   const [isDownloading, setIsDownloading] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfFileName, setPdfFileName] = useState('resume');
+    const [pdfError, setPdfError] = useState<string | null>(null);
   
   const [atsResult, setAtsResult] = useState<{ score: number; feedback: string[] } | null>(null);
   const [isAtsChecking, setIsAtsChecking] = useState(false);
@@ -74,11 +73,6 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
 
   const handleSelectTemplate = (templateId: TemplateKey) => {
     setActiveTemplate(templateId);
-    // Use a fallback to a default if a specific template isn't mapped
-    const newResumeData = templateDataMap[templateId] || templateDataMap['techModern'];
-    if (newResumeData) {
-        setResumeData(newResumeData);
-    }
   };
 
   const handleNextStep = () => {
@@ -110,7 +104,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
     overlay.style.transition = 'opacity 0.2s ease-in-out';
     overlay.style.opacity = '0';
 
-    const sparklesSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1.5s linear infinite;"><path d="m12 3-1.9 5.8-5.8 1.9 5.8 1.9 1.9 5.8 1.9-5.8 5.8-1.9-5.8-1.9z"/></svg>`;
+    const sparklesSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1.5s linear infinite;"><path d="m12 3-1.9 5.8-5.8 1.9 5.8 1.9 1.9 5.8 1.9-5.8 5.8-1.9-5.8-1.9z"/></svg>`;
     const textElement = document.createElement('p');
     textElement.textContent = text;
     textElement.style.marginTop = '16px';
@@ -144,11 +138,12 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
 
     const elementToCapture = document.querySelector<HTMLElement>('#resume-preview-container > div');
     if (!elementToCapture) {
-        console.error("Resume preview element not found for PDF generation!");
+        setPdfError('Could not find the resume preview. Go back to the Preview or ATS step and try again.');
         return;
     }
 
     setIsDownloading(true);
+    setPdfError(null);
     const htmlElement = document.documentElement;
     const isDarkMode = htmlElement.classList.contains('dark');
     let overlay: HTMLDivElement | null = null;
@@ -170,7 +165,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
 
         const imgData = canvas.toDataURL('image/png');
         
-        const pdf = new jspdf.jsPDF({
+        const pdf = new jsPDF({
             orientation: 'portrait',
             unit: 'mm',
             format: 'a4'
@@ -195,9 +190,11 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
         }
 
         pdf.save(`${pdfFileName}.pdf`);
+        setIsPdfModalOpen(false);
 
     } catch (error) {
         console.error("Error generating PDF:", error);
+        setPdfError(error instanceof Error ? error.message : 'PDF generation failed. Please try again.');
     } finally {
         if (isDarkMode) {
             htmlElement.classList.add('dark');
@@ -206,7 +203,6 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
             }
         }
         setIsDownloading(false);
-        setIsPdfModalOpen(false);
     }
   };
 
@@ -357,7 +353,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
       setStep('content'); // Proceed to content editing step
     } catch (error) {
       console.error("Failed to generate resume from prompt", error);
-      setAiError("Sorry, the AI failed to generate the resume. Please try refining your prompt or try again.");
+            setAiError(error instanceof Error ? error.message : "AI resume generation failed. Please try again.");
     } finally {
       setIsAiGenerating(false);
     }
@@ -651,6 +647,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
                 />
                 <span className="text-muted-foreground">.pdf</span>
               </div>
+                            {pdfError && <p className="mt-3 text-sm text-destructive" role="alert">{pdfError}</p>}
             </CardContent>
             <CardFooter className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsPdfModalOpen(false)} disabled={isDownloading}>

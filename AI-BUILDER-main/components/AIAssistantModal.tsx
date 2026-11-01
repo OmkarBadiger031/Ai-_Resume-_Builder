@@ -28,7 +28,7 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ isOpen, onCl
       const result = await getGeneralAIAssistance(query, resumeData);
       setResponse(result);
     } catch (err) {
-      setError('Sorry, something went wrong. Please try again.');
+      setError(err instanceof Error ? err.message : 'Sorry, something went wrong. Please try again.');
       console.error(err);
     } finally {
       setIsLoading(false);

@@ -1,24 +1,23 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { ResumeData } from "../types";
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-const API_KEY = process.env.API_KEY;
+const getAIClient = () => {
+  if (!API_KEY) {
+    throw new Error("API key is not configured. Check VITE_GEMINI_API_KEY in .env.local.");
+  }
 
-if (!API_KEY) {
-  console.warn("API_KEY environment variable not set. AI features will not work.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+  return new GoogleGenAI({ apiKey: API_KEY });
+};
 
 export async function generateWorkExperienceBullets(
   jobTitle: string,
   company: string,
   existingDescription: string
 ): Promise<string[]> {
-    if (!API_KEY) {
-        throw new Error("API key is not configured.");
-    }
-    
+  const ai = getAIClient();
+
   const prompt = `
     You are an expert resume writer.
     Generate 3-5 professional, impactful, and quantifiable resume bullet points for the following role.
@@ -48,6 +47,7 @@ export async function generateWorkExperienceBullets(
     });
 
     const jsonString = response.text;
+    if (!jsonString) throw new Error("Gemini returned an empty response.");
     const parsed = JSON.parse(jsonString);
     return parsed.bulletPoints || [];
   } catch (error) {
@@ -57,10 +57,8 @@ export async function generateWorkExperienceBullets(
 }
 
 export async function generateResumeFromPrompt(prompt: string): Promise<ResumeData> {
-    if (!API_KEY) {
-        throw new Error("API key is not configured.");
-    }
-    
+    const ai = getAIClient();
+
     const generationPrompt = `
         You are a high-precision data extraction tool. Your job is to convert user requests into a structured Resume JSON.
         
@@ -174,26 +172,33 @@ export async function generateResumeFromPrompt(prompt: string): Promise<ResumeDa
             },
         });
 
+        if (!response.text) throw new Error("Gemini returned an empty response.");
         return JSON.parse(response.text) as ResumeData;
     } catch (error) {
         console.error("Error generating resume:", error);
-        throw new Error("Failed to generate resume from AI.");
+      const message = error instanceof Error ? error.message : "Unknown Gemini API error.";
+      throw new Error(`Gemini request failed: ${message}`);
     }
 }
 
 export async function getGeneralAIAssistance(query: string, resumeData: ResumeData): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIClient();
+  const resumeForAssistance = {
+    ...resumeData,
+    personalInfo: { ...resumeData.personalInfo, photo: '' },
+  };
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Resume Content: ${JSON.stringify(resumeData)}\nUser Query: ${query}`,
+        contents: `Resume Content: ${JSON.stringify(resumeForAssistance)}\nUser Query: ${query}`,
         config: { systemInstruction: "You are a career coach helping a user improve their resume." }
     });
-    return response.text;
+    return response.text ?? "";
 }
 
 export async function analyzeUploadedResume(
   resumeContent: string | { mimeType: string; data: string }
 ): Promise<{ score: number; feedback: string[] }> {
+  const ai = getAIClient();
   const contents = typeof resumeContent === 'string' ? resumeContent : { parts: [{ inlineData: resumeContent }] };
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
@@ -211,5 +216,6 @@ export async function analyzeUploadedResume(
       }
     }
   });
+  if (!response.text) throw new Error("Gemini returned an empty analysis response.");
   return JSON.parse(response.text);
 }

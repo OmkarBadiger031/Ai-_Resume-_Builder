@@ -31,13 +31,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
     setError('');
     setSuccessMessage('');
 
-    // NOTE: In a real app, use a proper password hashing library.
-    // Storing plaintext passwords is NOT secure.
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    let users: { fullName: string; email: string; password: string }[];
+    try {
+      users = JSON.parse(localStorage.getItem('users') || '[]');
+      if (!Array.isArray(users)) users = [];
+    } catch {
+      users = [];
+    }
 
     if (isLoginView) {
       // Handle Login
-      const user = users.find((u: any) => u.email === email);
+      const user = users.find((u) => u.email === email);
       if (user && user.password === password) {
         onLogin({ fullName: user.fullName, email: user.email });
       } else {
@@ -45,7 +49,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLogin }) => {
       }
     } else {
       // Handle Sign Up
-      if (users.some((u: any) => u.email === email)) {
+      if (users.some((u) => u.email === email)) {
         setError('An account with this email already exists.');
         return;
       }
