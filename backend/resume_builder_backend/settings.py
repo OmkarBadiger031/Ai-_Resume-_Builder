@@ -79,6 +79,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "resume_builder_backend.wsgi.application"
 ASGI_APPLICATION = "resume_builder_backend.asgi.application"
 
+```python
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
@@ -89,9 +90,12 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", "3306"),
         "OPTIONS": {
             "charset": "utf8mb4",
+            "ssl": {},
         },
     }
 }
+```
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
