@@ -262,6 +262,30 @@ const sectionTitles: Record<SectionKey, string> = {
   awards: 'Certifications & Awards',
 };
 
+const layoutAccents: Record<ResumeLayout, string> = {
+  classic: '#111827',
+  developer: '#2563eb',
+  corporate: '#334155',
+  minimal: '#a3a3a3',
+  creative: '#d946ef',
+  finance: '#a16207',
+  nurse: '#0f766e',
+  surgeon: '#065f46',
+  clinical: '#7c3aed',
+  executive: '#4338ca',
+  data: '#4f46e5',
+  academic: '#64748b',
+  graduate: '#059669',
+  marketing: '#ea580c',
+  engineering: '#0e7490',
+  sales: '#1e3a8a',
+  people: '#be123c',
+  consultant: '#3730a3',
+  portfolio: '#92400e',
+  support: '#475569',
+  architect: '#0e7490',
+};
+
 const getDateRange = (start: string, end: string, isCurrent?: boolean) =>
   [start, isCurrent ? 'Present' : end].filter(Boolean).join(' – ');
 
@@ -271,7 +295,8 @@ const ResumeSection: React.FC<{
   layout: ResumeLayout;
   sectionClass: string;
   titleClass: string;
-}> = ({ section, resumeData, layout, sectionClass, titleClass }) => {
+  accentColor: string;
+}> = ({ section, resumeData, layout, sectionClass, titleClass, accentColor }) => {
   const heading = layout === 'nurse' && section === 'workExperience'
     ? 'Clinical Experience'
     : layout === 'surgeon' && section === 'education'
@@ -340,15 +365,24 @@ const ResumeSection: React.FC<{
   }
 
   if (!content) return null;
-  return <section className={sectionClass}><h2 className={titleClass}>{heading}</h2>{content}</section>;
+  return <section className={`${sectionClass} break-inside-avoid`}>
+    <h2 className={`${titleClass} flex items-center gap-2`} style={{ borderBottom: 'none' }}>
+      <span>{heading}</span>
+      <span aria-hidden="true" className="h-px min-w-4 flex-1" style={{ backgroundColor: accentColor }} />
+    </h2>
+    {content}
+  </section>;
 };
 
-const AdditionalSections: React.FC<{ resumeData: ResumeData; sectionClass: string; titleClass: string }> = ({ resumeData, sectionClass, titleClass }) => <>
+const AdditionalSections: React.FC<{ resumeData: ResumeData; sectionClass: string; titleClass: string; accentColor: string }> = ({ resumeData, sectionClass, titleClass, accentColor }) => <>
   {(resumeData.additionalSections || []).map(section => {
     const entries = (section.entries || []).filter(entry => entry.title || entry.organization || entry.date || entry.description || entry.url);
     if (!section.title.trim() || !entries.length) return null;
-    return <section key={section.id} className={sectionClass}>
-      <h2 className={titleClass}>{section.title}</h2>
+    return <section key={section.id} className={`${sectionClass} break-inside-avoid`}>
+      <h2 className={`${titleClass} flex items-center gap-2`} style={{ borderBottom: 'none' }}>
+        <span>{section.title}</span>
+        <span aria-hidden="true" className="h-px min-w-4 flex-1" style={{ backgroundColor: accentColor }} />
+      </h2>
       <div className="space-y-2">{entries.map(entry => <article key={entry.id}>
         <div className="flex flex-wrap items-baseline justify-between gap-1">
           <h3 className="break-words text-xs font-bold text-slate-900">{entry.title}</h3>
@@ -364,12 +398,13 @@ const AdditionalSections: React.FC<{ resumeData: ResumeData; sectionClass: strin
 
 export const ProfessionLayout: React.FC<ProfessionLayoutProps> = ({ resumeData, sectionOrder, layout }) => {
   const style = layoutPresentation[layout];
+  const accentColor = layoutAccents[layout];
   const personal = resumeData.personalInfo;
   const contacts = [personal.email, personal.phoneNumber, personal.address, personal.linkedIn, personal.github].filter(Boolean);
   const currentRole = resumeData.workExperience?.find(item => item.isCurrent)?.jobTitle || resumeData.workExperience?.[0]?.jobTitle;
   const roleTextColor = ['developer', 'executive', 'architect', 'engineering', 'sales'].includes(layout) ? 'text-slate-200' : 'text-slate-600';
   const visibleOrder = sectionOrder.filter((key): key is Exclude<SectionKey, 'personalInfo'> => key !== 'personalInfo');
-  const header = <header className={`${style.header} ${personal.photo && layout !== 'classic' ? 'flex items-start gap-3' : ''}`}>
+  const header = <header style={{ borderTop: `4px solid ${accentColor}` }} className={`${style.header} ${personal.photo && layout !== 'classic' ? 'flex items-start gap-3' : ''}`}>
     <div className="min-w-0 flex-1">
       <h1 className={`${style.name} break-words`}>{personal.fullName || 'Your Name'}</h1>
       {currentRole && <p className={`mt-1 break-words text-xs font-medium ${roleTextColor}`}>{currentRole}</p>}
@@ -377,16 +412,20 @@ export const ProfessionLayout: React.FC<ProfessionLayoutProps> = ({ resumeData, 
     </div>
     {personal.photo && layout !== 'classic' && <img src={personal.photo} alt={`${personal.fullName || 'Profile'} profile`} className="h-14 w-14 shrink-0 rounded-full border border-slate-200 object-cover" />}
   </header>;
-  const renderSection = (section: Exclude<SectionKey, 'personalInfo'>) => <ResumeSection key={section} section={section} resumeData={resumeData} layout={layout} sectionClass={style.section} titleClass={style.title} />;
+  const renderSection = (section: Exclude<SectionKey, 'personalInfo'>) => <ResumeSection key={section} section={section} resumeData={resumeData} layout={layout} sectionClass={style.section} titleClass={style.title} accentColor={accentColor} />;
+  const resumeFooter = <footer className="mt-7 flex items-center justify-between gap-3 border-t pt-2 text-[9px] text-slate-400" style={{ borderColor: `${accentColor}66` }}>
+    <span className="max-w-[70%] truncate">{personal.fullName || 'Resume'}</span>
+    <span className="shrink-0 uppercase tracking-widest">Resume</span>
+  </footer>;
 
   if (!style.sidebarSections.length) {
     return <article className={`${style.page} resume-template resume-template-${layout} min-h-[11in] w-full max-w-[8.5in] overflow-hidden`}>
-      {header}<main>{visibleOrder.map(renderSection)}<AdditionalSections resumeData={resumeData} sectionClass={style.section} titleClass={style.title} /></main>
+      {header}<main>{visibleOrder.map(renderSection)}<AdditionalSections resumeData={resumeData} sectionClass={style.section} titleClass={style.title} accentColor={accentColor} />{resumeFooter}</main>
     </article>;
   }
 
   const mainHeader = layout === 'developer' || layout === 'creative' || layout === 'finance' || layout === 'executive' || layout === 'marketing' || layout === 'portfolio' || layout === 'architect'
-    ? <header className={`${style.header.replace('md:hidden', '')} ${personal.photo ? 'flex items-start gap-3' : ''} hidden md:block`}><div className="min-w-0 flex-1"><h1 className={`${style.name} break-words`}>{personal.fullName || 'Your Name'}</h1>{currentRole && <p className={`mt-1 break-words text-xs font-medium ${roleTextColor}`}>{currentRole}</p>}<div className={`${style.contact} break-all`}>{contacts.map((contact, index) => <React.Fragment key={`${contact}-${index}`}><span>{contact}</span>{index < contacts.length - 1 && <span aria-hidden="true">·</span>}</React.Fragment>)}</div></div>{personal.photo && <img src={personal.photo} alt={`${personal.fullName || 'Profile'} profile`} className="h-14 w-14 shrink-0 rounded-full border border-slate-200 object-cover" />}</header>
+    ? <header style={{ borderTop: `4px solid ${accentColor}` }} className={`${style.header.replace('md:hidden', '')} ${personal.photo ? 'flex items-start gap-3' : ''} hidden md:block`}><div className="min-w-0 flex-1"><h1 className={`${style.name} break-words`}>{personal.fullName || 'Your Name'}</h1>{currentRole && <p className={`mt-1 break-words text-xs font-medium ${roleTextColor}`}>{currentRole}</p>}<div className={`${style.contact} break-all`}>{contacts.map((contact, index) => <React.Fragment key={`${contact}-${index}`}><span>{contact}</span>{index < contacts.length - 1 && <span aria-hidden="true">·</span>}</React.Fragment>)}</div></div>{personal.photo && <img src={personal.photo} alt={`${personal.fullName || 'Profile'} profile`} className="h-14 w-14 shrink-0 rounded-full border border-slate-200 object-cover" />}</header>
     : null;
 
   return <article className={`${style.page} resume-template resume-template-${layout} min-h-[11in] w-full max-w-[8.5in] overflow-hidden`}>
@@ -401,7 +440,8 @@ export const ProfessionLayout: React.FC<ProfessionLayoutProps> = ({ resumeData, 
       {mainHeader && <div className="hidden md:block">{mainHeader}</div>}
       {visibleOrder.filter(key => style.mainSections.includes(key)).map(renderSection)}
       {visibleOrder.filter(key => !style.sidebarSections.includes(key) && !style.mainSections.includes(key)).map(renderSection)}
-      <AdditionalSections resumeData={resumeData} sectionClass={style.section} titleClass={style.title} />
+      <AdditionalSections resumeData={resumeData} sectionClass={style.section} titleClass={style.title} accentColor={accentColor} />
+      {resumeFooter}
     </main>
   </article>;
 };

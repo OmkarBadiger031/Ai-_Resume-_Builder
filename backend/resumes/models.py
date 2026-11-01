@@ -15,3 +15,18 @@ class Resume(models.Model):
 
     def __str__(self):
         return f"{self.owner_email} - {self.template_name}"
+
+
+class ResumeAnalysisCache(models.Model):
+    """Stores short-lived ATS results without retaining the source resume."""
+
+    content_hash = models.CharField(max_length=64, unique=True)
+    result = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"ATS analysis cache entry {self.content_hash[:12]}"

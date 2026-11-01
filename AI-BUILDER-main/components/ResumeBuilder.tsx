@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ResumeData, SectionKey, TemplateKey } from '../types';
 import { ResumeForm } from './ResumeForm';
 import { ResumePreview } from './ResumePreview';
@@ -13,7 +13,7 @@ import { Textarea } from './ui/Textarea';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-type Step = 'template' | 'ai' | 'content' | 'preview' | 'ats';
+type Step = 'template' | 'ai' | 'content' | 'preview' | 'ats' | 'finalReview';
 
 const STEPS: { id: Step, name: string }[] = [
     { id: 'template', name: 'Template' },
@@ -21,7 +21,54 @@ const STEPS: { id: Step, name: string }[] = [
     { id: 'content', name: 'Content' },
     { id: 'preview', name: 'Preview' },
     { id: 'ats', name: 'ATS Check' },
+        { id: 'finalReview', name: 'Final Review' },
 ];
+
+const TEMPLATE_OPTIONS: { id: TemplateKey; name: string }[] = [
+    { id: 'classic', name: 'Classic ATS' },
+    { id: 'executive', name: 'Investment Banker' },
+    { id: 'corporate', name: 'Corporate Professional' },
+    { id: 'consulting', name: 'Consultant' },
+    { id: 'finance', name: 'Financial Analyst' },
+    { id: 'registeredNurse', name: 'Registered Nurse' },
+    { id: 'surgeon', name: 'Surgeon' },
+    { id: 'psychiatrist', name: 'Psychiatrist' },
+    { id: 'techModern', name: 'Modern Developer' },
+    { id: 'techMinimal', name: 'Minimal Tech' },
+    { id: 'techPro', name: 'Data Analyst' },
+    { id: 'startup', name: 'Startup & Growth' },
+    { id: 'techSupporter', name: 'IT Support' },
+    { id: 'techArch', name: 'Solutions Architect' },
+    { id: 'techManager', name: 'Engineering Manager' },
+    { id: 'portfolioManager', name: 'Portfolio Manager' },
+    { id: 'projectManager', name: 'Project Manager' },
+    { id: 'medicalDoctor', name: 'Medical Doctor' },
+    { id: 'dataScientist', name: 'Data Scientist' },
+    { id: 'uxDesigner', name: 'UX / UI Designer' },
+    { id: 'teacher', name: 'Teaching Professional' },
+    { id: 'academicResearcher', name: 'Academic Research' },
+    { id: 'graduate', name: 'Graduate & Fresher' },
+    { id: 'marketing', name: 'Marketing & Content' },
+    { id: 'sales', name: 'Sales & Business Development' },
+    { id: 'humanResources', name: 'People & HR' },
+    { id: 'engineer', name: 'Engineering Professional' },
+    { id: 'accountant', name: 'Accounting Professional' },
+];
+
+const getAtsErrorMessage = (error: unknown, uploadedFile = false): string => {
+    const message = error instanceof Error ? error.message : '';
+    const context = uploadedFile ? 'the uploaded resume' : 'your resume';
+
+    if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+        return 'Cannot reach the Django AI service. Start the backend at http://127.0.0.1:8000 and try again.';
+    }
+
+    if (/GEMINI_API_KEY is not configured/i.test(message)) {
+        return 'Gemini is not configured on the Django backend. Add GEMINI_API_KEY to the backend environment and restart Django.';
+    }
+
+    return `The AI service could not analyze ${context}. Check that the backend and Gemini service are available, then try again.`;
+};
 
 interface ResumeBuilderProps {
   resumeData: ResumeData;
@@ -50,10 +97,28 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
   const [isAtsChecking, setIsAtsChecking] = useState(false);
   const [atsError, setAtsError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+    const resumePreviewRef = useRef<HTMLDivElement>(null);
+    const [estimatedPageCount, setEstimatedPageCount] = useState(1);
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const preview = resumePreviewRef.current?.querySelector<HTMLElement>('.resume-template');
+        if (!preview) return undefined;
+
+        const updatePageCount = () => {
+            const a4PageHeightPx = 96 * 11.69;
+            setEstimatedPageCount(Math.max(1, Math.ceil(preview.scrollHeight / a4PageHeightPx)));
+        };
+
+        updatePageCount();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(updatePageCount);
+        observer.observe(preview);
+        return () => observer.disconnect();
+    }, [resumeData, activeTemplate, step]);
 
 
   const handleMoveSection = (index: number, direction: 'up' | 'down') => {
@@ -136,7 +201,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
   const handleDownloadPdf = async () => {
     if (!pdfFileName.trim()) return;
 
-    const elementToCapture = document.querySelector<HTMLElement>('#resume-preview-container > div');
+    const elementToCapture = resumePreviewRef.current?.querySelector<HTMLElement>('.resume-template') ?? null;
     if (!elementToCapture) {
         setPdfError('Could not find the resume preview. Go back to the Preview or ATS step and try again.');
         return;
@@ -147,6 +212,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
     const htmlElement = document.documentElement;
     const isDarkMode = htmlElement.classList.contains('dark');
     let overlay: HTMLDivElement | null = null;
+    let exportWrapper: HTMLDivElement | null = null;
 
     if (isDarkMode) {
         overlay = createProcessingOverlay('Preparing PDF...');
@@ -156,11 +222,33 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
     await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
-        const canvas = await html2canvas(elementToCapture, {
+        // Render at A4 CSS width, independent of the narrow on-screen preview column.
+        exportWrapper = document.createElement('div');
+        Object.assign(exportWrapper.style, {
+            position: 'fixed',
+            left: '-10000px',
+            top: '0',
+            width: '794px',
+            background: '#ffffff',
+            zIndex: '-1',
+        });
+        const exportElement = elementToCapture.cloneNode(true) as HTMLElement;
+        Object.assign(exportElement.style, {
+            width: '794px',
+            minWidth: '794px',
+            maxWidth: '794px',
+            boxSizing: 'border-box',
+            margin: '0',
+        });
+        exportWrapper.appendChild(exportElement);
+        document.body.appendChild(exportWrapper);
+
+        const canvas = await html2canvas(exportElement, {
             scale: 2, 
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff',
+            windowWidth: Math.max(window.innerWidth, 1024),
         });
 
         const imgData = canvas.toDataURL('image/png');
@@ -174,19 +262,17 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
         
-        const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        let heightLeft = imgHeight;
-        let position = 0;
+        let imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pageHeight;
+        // Avoid a nearly blank second page when content exceeds A4 by only a few pixels.
+        if (imgHeight > pageHeight && imgHeight <= pageHeight * 1.04) {
+            imgHeight = pageHeight;
+        }
 
-        while (heightLeft > 0) {
-            position -= pageHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-            heightLeft -= pageHeight;
+        const pageCount = Math.max(1, Math.ceil(imgHeight / pageHeight - 0.001));
+        for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+            if (pageIndex > 0) pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, -pageIndex * pageHeight, pdfWidth, imgHeight);
         }
 
         pdf.save(`${pdfFileName}.pdf`);
@@ -196,6 +282,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
         console.error("Error generating PDF:", error);
         setPdfError(error instanceof Error ? error.message : 'PDF generation failed. Please try again.');
     } finally {
+        exportWrapper?.remove();
         if (isDarkMode) {
             htmlElement.classList.add('dark');
             if (overlay) {
@@ -212,7 +299,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
       setAtsResult(null);
       setAtsError(null);
 
-      const elementToCapture = document.querySelector<HTMLElement>('#resume-preview-container > div');
+    const elementToCapture = resumePreviewRef.current?.querySelector<HTMLElement>('.resume-template') ?? null;
       
       if (!elementToCapture) {
         setAtsError("Could not find the resume preview to analyze. Please try again.");
@@ -250,7 +337,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
 
       } catch (error) {
         console.error("Failed to run ATS check", error);
-        setAtsError("Sorry, the AI analysis failed. Please try again.");
+                setAtsError(getAtsErrorMessage(error));
       } finally {
         if (isDarkMode) {
             htmlElement.classList.add('dark');
@@ -283,7 +370,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
                     setAtsResult(result);
                 } catch (error) {
                     console.error("Failed to run ATS check on uploaded text file", error);
-                    setAtsError("Sorry, the AI analysis for the uploaded file failed. Please try again.");
+                    setAtsError(getAtsErrorMessage(error, true));
                 } finally {
                     setIsAtsChecking(false);
                 }
@@ -312,7 +399,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
                     setAtsResult(result);
                 } catch (error) {
                     console.error("Failed to run ATS check on uploaded file", error);
-                    setAtsError("Sorry, the AI analysis for the uploaded file failed. Please try again.");
+                    setAtsError(getAtsErrorMessage(error, true));
                 } finally {
                     setIsAtsChecking(false);
                 }
@@ -469,7 +556,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
               return (
                  <>
                     <p className="text-center text-muted-foreground mb-4">Here's your generated resume. Review it, then proceed to the ATS check.</p>
-                    <div className="max-w-4xl mx-auto" id="resume-preview-container">
+                    <div className="max-w-4xl mx-auto" id="resume-preview-container" ref={resumePreviewRef}>
                         <ResumePreview 
                             resumeData={resumeData} 
                             sectionOrder={sections} 
@@ -477,6 +564,67 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
                         />
                     </div>
                  </>
+              );
+          case 'finalReview':
+              return (
+                  <div className="space-y-5">
+                      <header className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
+                          <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Final step</p>
+                              <h2 className="mt-1 text-2xl font-bold tracking-tight">Review &amp; Final Edit</h2>
+                              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Make corrections in the editor and see them immediately in your resume. Your changes are saved automatically in this browser.</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-sm">
+                              <span className="rounded-md border bg-muted/40 px-3 py-2"><strong>{estimatedPageCount}</strong> {estimatedPageCount === 1 ? 'page' : 'pages'} <span className="text-muted-foreground">(A4 estimate)</span></span>
+                              <span className="rounded-md border bg-green-500/10 px-3 py-2 font-medium text-green-700 dark:text-green-400">Saved locally</span>
+                          </div>
+                      </header>
+
+                      <div className="grid items-start gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
+                          <section className="min-w-0 space-y-3">
+                              <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+                                  <label className="min-w-[220px] flex-1 text-sm font-medium" htmlFor="final-template-select">
+                                      Resume template
+                                      <select
+                                          id="final-template-select"
+                                          value={activeTemplate}
+                                          onChange={event => setActiveTemplate(event.target.value as TemplateKey)}
+                                          className="mt-1 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      >
+                                          {TEMPLATE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                                      </select>
+                                  </label>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => setStep('template')}>Browse templates</Button>
+                              </div>
+                              <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1" aria-label="Final resume editor">
+                                  <ResumeForm
+                                      resumeData={resumeData}
+                                      setResumeData={setResumeData}
+                                      sections={sections}
+                                      onMoveSection={handleMoveSection}
+                                  />
+                              </div>
+                          </section>
+
+                          <section className="min-w-0">
+                              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                      <h3 className="font-semibold">Live resume preview</h3>
+                                      <p className="text-xs text-muted-foreground">Changes appear here as you edit.</p>
+                                  </div>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => setStep('ats')}>Check ATS score</Button>
+                              </div>
+                              <div className="max-h-[76vh] overflow-auto rounded-lg border bg-slate-100 p-3 dark:bg-slate-950 sm:p-5" id="resume-preview-container" ref={resumePreviewRef}>
+                                  <ResumePreview
+                                      resumeData={resumeData}
+                                      sectionOrder={sections}
+                                      template={activeTemplate}
+                                  />
+                              </div>
+                              <p className="mt-2 text-xs text-muted-foreground">The page count is an estimate based on the visible A4 layout. Confirm the downloaded PDF before sending it.</p>
+                          </section>
+                      </div>
+                  </div>
               );
           case 'ats':
               return (
@@ -532,7 +680,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
                           )}
 
                       </div>
-                      <div id="resume-preview-container">
+                      <div id="resume-preview-container" ref={resumePreviewRef}>
                           <ResumePreview 
                               resumeData={resumeData} 
                               sectionOrder={sections} 
@@ -604,9 +752,9 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
               <Button variant="outline" onClick={handlePrevStep} disabled={step === 'template'}>
                   Previous
               </Button>
-              {step === 'ats' ? (
+              {step === 'finalReview' ? (
                   <Button onClick={() => setIsPdfModalOpen(true)} disabled={isDownloading}>
-                      {isDownloading ? 'Downloading...' : 'Download PDF'}
+                      {isDownloading ? 'Preparing PDF...' : 'Download final PDF'}
                   </Button>
               ) : (
                   <Button onClick={handleNextStep}>
@@ -616,7 +764,7 @@ export const ResumeBuilder: React.FC<ResumeBuilderProps> = ({ resumeData, setRes
           </CardFooter>
       </Card>
       
-      {(step === 'preview' || step === 'ats' || step === 'ai') && (
+    {(step === 'preview' || step === 'ats' || step === 'ai') && (
             <div className="mt-6 flex justify-center gap-4">
                 <Button variant="secondary" onClick={() => setStep('content')}>Edit Content</Button>
                 <Button variant="secondary" onClick={() => setStep('template')}>Change Template</Button>
