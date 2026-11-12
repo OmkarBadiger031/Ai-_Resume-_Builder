@@ -13,30 +13,61 @@ def env_bool(name, default=False):
 
 
 def env_list(name, default=""):
-    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+    return [
+        item.strip()
+        for item in os.getenv(name, default).split(",")
+        if item.strip()
+    ]
 
 
+# Debug configuration
 DEBUG = env_bool("DEBUG", False)
 
+
+# Secret key
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+
 if not SECRET_KEY:
     if not DEBUG:
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be configured when DEBUG is disabled.")
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be configured when DEBUG is disabled."
+        )
     SECRET_KEY = get_random_secret_key()
 
-# Hosts: from env, plus Render's automatic hostname
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0")
+
+# Allowed hosts
+ALLOWED_HOSTS = env_list(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1,0.0.0.0"
+)
+
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+
 if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
-required_database_settings = ("DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST")
-missing_database_settings = [name for name in required_database_settings if not os.getenv(name)]
+
+# Database configuration validation
+required_database_settings = (
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD",
+    "DB_HOST",
+)
+
+missing_database_settings = [
+    name for name in required_database_settings
+    if not os.getenv(name)
+]
+
 if missing_database_settings:
     raise ImproperlyConfigured(
-        "Database configuration is missing: " + ", ".join(missing_database_settings)
+        "Database configuration is missing: "
+        + ", ".join(missing_database_settings)
     )
 
+
+# Installed applications
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -49,6 +80,8 @@ INSTALLED_APPS = [
     "resumes",
 ]
 
+
+# Middleware
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -61,6 +94,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+
+# Django configuration
 ROOT_URLCONF = "resume_builder_backend.urls"
 
 TEMPLATES = [
@@ -82,8 +117,10 @@ TEMPLATES = [
 WSGI_APPLICATION = "resume_builder_backend.wsgi.application"
 ASGI_APPLICATION = "resume_builder_backend.asgi.application"
 
-# Database (MySQL, external host)
+
+# MySQL database configuration
 DB_OPTIONS = {"charset": "utf8mb4"}
+
 if env_bool("DB_SSL", True):
     DB_OPTIONS["ssl_mode"] = "REQUIRED"
 
@@ -99,45 +136,80 @@ DATABASES = {
     }
 }
 
+
+# Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"
+    },
 ]
 
+
+# Internationalization
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# Static files (served by WhiteNoise)
+
+# Static files
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage"
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"
+    },
 }
+
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# HTTPS / security (Render terminates SSL at its proxy)
+
+# HTTPS and security
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
 
-# CORS / CSRF: local dev origins + deployed frontend origins from env
+SECURE_SSL_REDIRECT = env_bool(
+    "SECURE_SSL_REDIRECT",
+    not DEBUG
+)
+
+
+# CORS configuration
 CORS_ALLOWED_ORIGINS = [
+    # Local frontend development
     "http://localhost:3001",
     "http://127.0.0.1:3001",
     "http://localhost:3002",
     "http://127.0.0.1:3002",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+
+    # Production frontend on Vercel
+    "https://ai-resume-builder-iota-ruddy.vercel.app",
 ] + env_list("CORS_ALLOWED_ORIGINS")
+
+
+# CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS[:]
 
+
+# Django REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
