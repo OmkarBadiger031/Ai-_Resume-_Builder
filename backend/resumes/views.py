@@ -20,7 +20,9 @@ from .models import ResumeAnalysisCache
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-3-flash-preview"
+# Updated Gemini model
+GEMINI_MODEL = "gemini-3.8-flash"
+
 ATS_ANALYSIS_CACHE_DAYS = 30
 ATS_ANALYSIS_PROMPT_VERSION = "ats-analysis-v1"
 
@@ -86,11 +88,16 @@ def get_analysis_cache_key(mime_type, content_bytes):
         + b"\0"
         + content_bytes
     )
-    return hmac.new(settings.SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
+    return hmac.new(
+        settings.SECRET_KEY.encode(),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def generate_resume_analysis(resume_part):
     client = get_gemini_client()
+
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[
@@ -129,6 +136,7 @@ def generate_resume_analysis(resume_part):
     result = json.loads(response.text)
     score = result.get("score")
     feedback = result.get("feedback")
+
     if (
         not isinstance(score, int)
         or not 1 <= score <= 100
@@ -167,7 +175,10 @@ def generate_work_experience_bullets(request):
     company = request.data.get("company", "")
     description = request.data.get("existingDescription", "")
 
-    if not all(isinstance(value, str) for value in (job_title, company, description)):
+    if not all(
+        isinstance(value, str)
+        for value in (job_title, company, description)
+    ):
         return Response(
             {"error": "Job title, company, and description must be text."},
             status=status.HTTP_400_BAD_REQUEST,
@@ -409,6 +420,7 @@ def analyze_resume(request):
                     {"error": "The resume content is too long."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
             mime_type = "text/plain"
             content_bytes = resume_content.encode("utf-8")
             resume_part = resume_content
@@ -423,7 +435,11 @@ def analyze_resume(request):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            if mime_type not in ("application/pdf", "image/png", "image/jpeg"):
+            if mime_type not in (
+                "application/pdf",
+                "image/png",
+                "image/jpeg",
+            ):
                 return Response(
                     {"error": "Only PDF, PNG, and JPEG files are supported."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -436,14 +452,21 @@ def analyze_resume(request):
                 )
 
             try:
-                content_bytes = base64.b64decode(encoded_data, validate=True)
+                content_bytes = base64.b64decode(
+                    encoded_data,
+                    validate=True,
+                )
             except Exception:
                 return Response(
                     {"error": "The uploaded file data is invalid."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            resume_part = types.Part.from_bytes(data=content_bytes, mime_type=mime_type)
+            resume_part = types.Part.from_bytes(
+                data=content_bytes,
+                mime_type=mime_type,
+            )
+
         else:
             return Response(
                 {"error": "Unsupported resume content format."},
@@ -452,7 +475,9 @@ def analyze_resume(request):
 
         cache_key = get_analysis_cache_key(mime_type, content_bytes)
         now = timezone.now()
+
         cached_result = cache.get(cache_key)
+
         if cached_result:
             return Response({"result": cached_result})
 
@@ -461,6 +486,7 @@ def analyze_resume(request):
                 content_hash=cache_key,
                 expires_at__gt=now,
             ).first()
+
             if cached:
                 cache.set(
                     cache_key,
@@ -468,38 +494,53 @@ def analyze_resume(request):
                     timeout=ATS_ANALYSIS_CACHE_DAYS * 24 * 60 * 60,
                 )
                 return Response({"result": cached.result})
+
             ResumeAnalysisCache.objects.filter(
                 content_hash=cache_key,
                 expires_at__lte=now,
             ).delete()
+
         except DatabaseError as cache_error:
-            logger.warning("ATS result cache lookup unavailable: %s", type(cache_error).__name__)
+            logger.warning(
+                "ATS result cache lookup unavailable: %s",
+                type(cache_error).__name__,
+            )
 
         result = generate_resume_analysis(resume_part)
+
         cache.set(
             cache_key,
             result,
             timeout=ATS_ANALYSIS_CACHE_DAYS * 24 * 60 * 60,
         )
+
         try:
             ResumeAnalysisCache.objects.update_or_create(
                 content_hash=cache_key,
                 defaults={
                     "result": result,
-                    "expires_at": now + timedelta(days=ATS_ANALYSIS_CACHE_DAYS),
+                    "expires_at": now + timedelta(
+                        days=ATS_ANALYSIS_CACHE_DAYS
+                    ),
                 },
             )
+
         except IntegrityError:
-            # Another request may have completed the same analysis concurrently.
             cached = ResumeAnalysisCache.objects.filter(
                 content_hash=cache_key,
                 expires_at__gt=timezone.now(),
             ).first()
+
             if cached:
                 result = cached.result
+
         except DatabaseError as cache_error:
-            logger.warning("ATS result cache save unavailable: %s", type(cache_error).__name__)
+            logger.warning(
+                "ATS result cache save unavailable: %s",
+                type(cache_error).__name__,
+            )
 
         return Response({"result": result})
+
     except Exception as error:
         return gemini_error_response(error)
